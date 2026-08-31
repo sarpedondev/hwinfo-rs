@@ -1,0 +1,3 @@
+[submodule "vendor/hwinfo"]
+	path = vendor/hwinfo
+	url = https://github.com/lfreist/hwinfo.git

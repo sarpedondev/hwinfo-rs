@@ -1,0 +1,12 @@
+[package]
+name = "hwinfo-rs"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Safe Rust bindings for the cross-platform lfreist/hwinfo C++ library"
+readme = "README.md"
+build = "build.rs"
+links = "hwinfo_rs_native"
+
+[build-dependencies]
+cc = "1.2"
