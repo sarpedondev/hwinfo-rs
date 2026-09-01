@@ -1,6 +1,6 @@
 ARG RUST_VERSION=stable
 
-FROM rust:bookworm AS toolchain
+FROM rust:trixie AS toolchain
 ARG RUST_VERSION
 RUN rustup toolchain install "$RUST_VERSION" --profile minimal
 RUN rustup default "$RUST_VERSION"
@@ -21,10 +21,10 @@ ENV PATH="/osxcross/bin:${PATH}" \
     CXX_aarch64_unknown_linux_gnu="aarch64-linux-gnu-g++" \
     AR_aarch64_unknown_linux_gnu="aarch64-linux-gnu-ar" \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="aarch64-linux-gnu-gcc" \
-    CC_x86_64_pc_windows_gnu="x86_64-w64-mingw32-gcc-posix" \
-    CXX_x86_64_pc_windows_gnu="x86_64-w64-mingw32-g++-posix" \
+    CC_x86_64_pc_windows_gnu="x86_64-w64-mingw32-gcc-win32" \
+    CXX_x86_64_pc_windows_gnu="x86_64-w64-mingw32-g++-win32" \
     AR_x86_64_pc_windows_gnu="x86_64-w64-mingw32-ar" \
-    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="x86_64-w64-mingw32-gcc-posix" \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="x86_64-w64-mingw32-gcc-win32" \
     CC_x86_64_apple_darwin="o64-clang" \
     CXX_x86_64_apple_darwin="o64-clang++" \
     AR_x86_64_apple_darwin="x86_64-apple-darwin23.6-ar" \

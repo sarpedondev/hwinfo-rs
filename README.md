@@ -72,14 +72,15 @@ CPU monitoring blocks for the requested sampling duration.
 - A C++17 compiler for the Cargo target
 - Linux: libstdc++
 - macOS: libc++, CoreFoundation, and IOKit from the target SDK
-- Windows GNU: MinGW-w64 with its C++ compiler and WMI import libraries
+- Windows GNU: MinGW-w64 GCC 13 or newer with its C++ compiler and WMI import
+  libraries. The C++ runtime is linked statically.
 
 Cargo's `cc` build helper honors target-qualified compiler variables. The
 Nebula Docker image should provide at least:
 
 ```text
 CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-posix
+CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-win32
 CXX_x86_64_apple_darwin=o64-clang++
 CXX_aarch64_apple_darwin=oa64-clang++
 ```

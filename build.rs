@@ -10,6 +10,29 @@ fn add_component(build: &mut cc::Build, upstream: &std::path::Path, platform: &s
         .file(upstream.join(format!("src/{platform}/{name}.cpp")));
 }
 
+fn add_static_cpp_stdlib_search(build: &cc::Build) {
+    let output = build
+        .get_compiler()
+        .to_command()
+        .arg("-print-file-name=libstdc++.a")
+        .output()
+        .expect("failed to locate the static C++ runtime");
+    if !output.status.success() {
+        panic!("C++ compiler failed to locate the static C++ runtime");
+    }
+
+    let archive = PathBuf::from(
+        String::from_utf8(output.stdout)
+            .expect("C++ runtime path is not UTF-8")
+            .trim(),
+    );
+    let directory = archive
+        .parent()
+        .filter(|_| archive.is_file())
+        .expect("C++ compiler did not return a static C++ runtime archive");
+    println!("cargo:rustc-link-search=native={}", directory.display());
+}
+
 fn main() {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
@@ -109,11 +132,14 @@ fn main() {
             println!("cargo:rustc-link-lib=framework=IOKit");
         }
         "windows" => {
-            native.cpp_link_stdlib(if target_env == "gnu" {
-                Some("stdc++")
+            if target_env == "gnu" {
+                native
+                    .cpp_link_stdlib("stdc++")
+                    .cpp_link_stdlib_static(true);
+                add_static_cpp_stdlib_search(&native);
             } else {
-                None
-            });
+                native.cpp_link_stdlib(None);
+            }
             if enabled("MAINBOARD")
                 || enabled("MEMORY")
                 || enabled("OS")
