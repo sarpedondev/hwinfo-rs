@@ -15,3 +15,14 @@ jobs:
       - run: cargo test --all-targets
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo fmt --all --check
+      - name: Check selectable base features
+        run: |
+          cargo check --no-default-features
+          for feature in cpu gpu memory os battery network mainboard disk monitoring; do
+            cargo check --no-default-features --features "$feature"
+          done
+      - name: Check optional OpenCL enrichment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ocl-icd-opencl-dev opencl-clhpp-headers
+          cargo check --no-default-features --features opencl

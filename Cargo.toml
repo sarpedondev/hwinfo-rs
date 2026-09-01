@@ -8,5 +8,19 @@ readme = "README.md"
 build = "build.rs"
 links = "hwinfo_rs_native"
 
+[features]
+default = ["full"]
+full = ["cpu", "gpu", "memory", "os", "battery", "network", "mainboard", "disk", "monitoring"]
+cpu = []
+gpu = []
+memory = []
+os = []
+battery = []
+network = []
+mainboard = []
+disk = []
+monitoring = ["cpu", "memory", "disk"]
+opencl = ["gpu"]
+
 [build-dependencies]
 cc = "1.2"

@@ -1,4 +1,14 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
+
+fn enabled(name: &str) -> bool {
+    env::var_os(format!("CARGO_FEATURE_{}", name.to_ascii_uppercase())).is_some()
+}
+
+fn add_component(build: &mut cc::Build, upstream: &std::path::Path, platform: &str, name: &str) {
+    build
+        .file(upstream.join(format!("src/{name}.cpp")))
+        .file(upstream.join(format!("src/{platform}/{name}.cpp")));
+}
 
 fn main() {
     let manifest_dir =
@@ -6,6 +16,7 @@ fn main() {
     let upstream = manifest_dir.join("vendor/hwinfo");
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("missing CARGO_CFG_TARGET_OS");
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("missing OUT_DIR"));
 
     if !upstream.join("include/hwinfo/hwinfo.h").is_file() {
         panic!("the hwinfo submodule is missing; run `git submodule update --init --recursive`");
@@ -14,8 +25,8 @@ fn main() {
     println!("cargo:rerun-if-changed=ffi/hwinfo_rs.cpp");
     println!("cargo:rerun-if-changed=include/hwinfo_rs.h");
     println!("cargo:rerun-if-changed=vendor/hwinfo/include");
-    println!("cargo:rerun-if-changed=vendor/hwinfo/src/mainboard.cpp");
-    println!("cargo:rerun-if-changed=vendor/hwinfo/src/disk.cpp");
+    println!("cargo:rerun-if-changed=vendor/hwinfo/src");
+    println!("cargo:rerun-if-changed=vendor/hwinfo/data/pci.ids");
 
     let mut native = cc::Build::new();
     native
@@ -24,46 +35,125 @@ fn main() {
         .define("HWINFO_STATIC", None)
         .include(manifest_dir.join("include"))
         .include(upstream.join("include"))
-        .file(manifest_dir.join("ffi/hwinfo_rs.cpp"))
-        .file(upstream.join("src/mainboard.cpp"))
-        .file(upstream.join("src/disk.cpp"));
+        .include(&out_dir)
+        .file(manifest_dir.join("ffi/hwinfo_rs.cpp"));
+
+    let platform = match target_os.as_str() {
+        "linux" => "linux",
+        "macos" => "apple",
+        "windows" => "windows",
+        unsupported => panic!("hwinfo-rs does not support target OS `{unsupported}`"),
+    };
+
+    for (feature, component) in [
+        ("BATTERY", "battery"),
+        ("CPU", "cpu"),
+        ("DISK", "disk"),
+        ("GPU", "gpu"),
+        ("MAINBOARD", "mainboard"),
+        ("OS", "os"),
+        ("MEMORY", "ram"),
+        ("NETWORK", "network"),
+    ] {
+        if enabled(feature) {
+            native.define(&format!("HWINFO_RS_{feature}"), None);
+            if target_os == "macos" && component == "battery" {
+                native.file(upstream.join("src/battery.cpp"));
+            } else {
+                add_component(&mut native, &upstream, platform, component);
+            }
+        }
+    }
+
+    if enabled("MONITORING") {
+        native.define("HWINFO_RS_MONITORING", None);
+        for component in ["cpu", "ram", "disk"] {
+            native.file(upstream.join(format!("src/{platform}/monitoring/{component}.cpp")));
+        }
+    }
+
+    if enabled("GPU") {
+        native.file(upstream.join("src/PCIMapper.cpp"));
+        let pci_data = fs::read(upstream.join("data/pci.ids")).expect("failed to read pci.ids");
+        let mut generated = String::from("const unsigned char pci_ids[] = {");
+        for byte in pci_data {
+            generated.push_str(&format!("0x{byte:02x},"));
+        }
+        generated.push_str("};\nconst unsigned int pci_ids_size = sizeof(pci_ids);\n");
+        fs::write(out_dir.join("pci.ids.h"), generated).expect("failed to generate pci.ids.h");
+    }
+
+    if enabled("OPENCL") && matches!(target_os.as_str(), "linux" | "windows") {
+        native
+            .define("HWINFO_RS_OPENCL", None)
+            .file(upstream.join("src/opencl/device.cpp"));
+        println!("cargo:rustc-link-lib=OpenCL");
+    }
 
     match target_os.as_str() {
         "linux" => {
-            native
-                .pic(true)
-                .cpp_link_stdlib("stdc++")
-                .file(upstream.join("src/linux/mainboard.cpp"))
-                .file(upstream.join("src/linux/disk.cpp"));
+            native.pic(true).cpp_link_stdlib("stdc++");
         }
         "macos" => {
-            native
-                .pic(true)
-                .cpp_link_stdlib("c++")
-                .file(upstream.join("src/apple/mainboard.cpp"))
-                .file(upstream.join("src/apple/disk.cpp"));
+            native.pic(true).cpp_link_stdlib("c++");
+            native.define("getVendor", "getCpuVendor");
+            if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64") && enabled("CPU") {
+                native.flag("-include").flag(
+                    manifest_dir
+                        .join("compat/apple/cpuid.h")
+                        .to_str()
+                        .expect("non-UTF-8 compatibility path"),
+                );
+            }
             println!("cargo:rustc-link-lib=framework=CoreFoundation");
             println!("cargo:rustc-link-lib=framework=IOKit");
         }
         "windows" => {
-            native
-                .cpp_link_stdlib(if target_env == "gnu" {
-                    Some("stdc++")
-                } else {
-                    None
-                })
-                .file(upstream.join("src/windows/mainboard.cpp"))
-                .file(upstream.join("src/windows/disk.cpp"))
-                .file(upstream.join("src/windows/utils/wmi_wrapper.cpp"));
+            native.cpp_link_stdlib(if target_env == "gnu" {
+                Some("stdc++")
+            } else {
+                None
+            });
+            if enabled("MAINBOARD")
+                || enabled("MEMORY")
+                || enabled("OS")
+                || enabled("BATTERY")
+                || enabled("NETWORK")
+            {
+                native.file(upstream.join("src/windows/utils/wmi_wrapper.cpp"));
+                println!("cargo:rustc-link-lib=ole32");
+                println!("cargo:rustc-link-lib=oleaut32");
+                println!("cargo:rustc-link-lib=wbemuuid");
+            }
             if target_env == "gnu" {
                 native.include(manifest_dir.join("compat/mingw"));
             }
-            println!("cargo:rustc-link-lib=ole32");
-            println!("cargo:rustc-link-lib=oleaut32");
-            println!("cargo:rustc-link-lib=wbemuuid");
+            if enabled("CPU") || enabled("MONITORING") {
+                println!("cargo:rustc-link-lib=powrprof");
+                println!("cargo:rustc-link-lib=ntdll");
+                println!("cargo:rustc-link-lib=advapi32");
+            }
+            if enabled("GPU") {
+                println!("cargo:rustc-link-lib=dxgi");
+                println!("cargo:rustc-link-lib=setupapi");
+            }
         }
-        unsupported => panic!("hwinfo-rs does not support target OS `{unsupported}`"),
+        _ => unreachable!(),
     }
 
     native.compile("hwinfo_rs_native");
+
+    if target_os == "macos" && enabled("BATTERY") {
+        let mut battery = cc::Build::new();
+        battery
+            .cpp(true)
+            .std("c++17")
+            .pic(true)
+            .cpp_link_stdlib("c++")
+            .define("HWINFO_STATIC", None)
+            .define("getVendor", "getBatteryVendor")
+            .include(upstream.join("include"))
+            .file(upstream.join("src/apple/battery.cpp"))
+            .compile("hwinfo_rs_apple_battery");
+    }
 }

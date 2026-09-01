@@ -3,9 +3,10 @@
 Safe Rust bindings for the cross-platform
 [`lfreist/hwinfo`](https://github.com/lfreist/hwinfo) C++ library.
 
-The initial API collects motherboard and physical-disk information on Linux,
-macOS, and Windows. It uses a narrow C ABI internally, so no C++ STL types or
-native allocations are exposed through the public Rust API.
+The default API collects CPU, GPU, memory, operating-system, battery, network,
+motherboard, and physical-disk information on Linux, macOS, and Windows. It
+uses a narrow C ABI internally, so no C++ STL types, exceptions, or native
+allocations are exposed through the public Rust API.
 
 ## Clone
 
@@ -26,12 +27,45 @@ git submodule update --init --recursive
 ```rust
 let hardware = hwinfo_rs::collect()?;
 
-println!("board serial: {:?}", hardware.mainboard.serial_number);
+println!("board serial: {:?}", hardware.mainboard.and_then(|board| board.serial_number));
 for disk in hardware.disks {
     println!("disk serial: {:?}", disk.serial_number);
 }
+for error in hardware.errors {
+    eprintln!("component unavailable: {error}");
+}
 # Ok::<(), hwinfo_rs::CollectionError>(())
 ```
+
+Each component also has an independent collector, such as
+`hwinfo_rs::cpu::collect()` or `hwinfo_rs::mainboard::collect()`. Aggregate
+collection is deliberately partial: a failed platform API is recorded in
+`HardwareInfo::errors` without discarding the other component snapshots.
+
+## Features
+
+All base components and synchronous monitoring are enabled by default through
+the `full` feature. Consumers can trim native code, for example:
+
+```toml
+hwinfo-rs = { path = "../hwinfo-rs", default-features = false, features = ["cpu", "mainboard", "disk"] }
+```
+
+Available features are `cpu`, `gpu`, `memory`, `os`, `battery`, `network`,
+`mainboard`, `disk`, and `monitoring`. The optional `opencl` feature enriches
+base GPU records with driver, memory, clock, and core data where a matching
+OpenCL device exists; it requires target OpenCL C/C++ headers and a loader.
+
+Monitoring is synchronous and leaves scheduling to the caller:
+
+```rust
+let cpu = hwinfo_rs::monitoring::cpu(std::time::Duration::from_millis(200))?;
+let memory = hwinfo_rs::monitoring::memory()?;
+let root = hwinfo_rs::monitoring::disk("/")?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+CPU monitoring blocks for the requested sampling duration.
 
 ## Native build requirements
 
@@ -45,7 +79,7 @@ Nebula Docker image should provide at least:
 
 ```text
 CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-posix
 CXX_x86_64_apple_darwin=o64-clang++
 CXX_aarch64_apple_darwin=oa64-clang++
 ```
@@ -60,13 +94,24 @@ osxcross image as Nebula:
 docker build -f Dockerfile.cross .
 ```
 
-## Current scope
+## Platform behavior
 
-- Motherboard vendor, name, version, and serial number
-- Physical disk identity, size, interface, and mount points
+- Linux and Windows expose the broadest inventory surface.
+- Upstream currently returns no GPU or network records on macOS.
+- Some Windows battery fields and Apple CPU monitoring values are limited by
+  the upstream implementation.
+- Missing devices are represented by empty lists. Actual collection failures
+  appear in the typed error list.
 
-CPU, memory, GPU, OS, battery, network, and monitoring bindings can be added
-without changing the public ownership model.
+## Hardware fingerprints and licensing
+
+Hardware fields are useful inputs to a licensing fingerprint, but no single
+field is a permanent or secret identifier. Firmware updates, VM cloning,
+hardware replacement, permissions, and spoofing can change or hide values.
+Normalize several stable inputs, hash them with an application-specific salt,
+allow a recovery/rebinding path, and treat the result as personal data where
+applicable. This crate intentionally does not invent a machine UUID or OS
+installation identifier beyond the upstream library's inventory.
 
 ## Licensing
 
