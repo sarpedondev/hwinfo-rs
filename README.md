@@ -72,8 +72,11 @@ CPU monitoring blocks for the requested sampling duration.
 - A C++17 compiler for the Cargo target
 - Linux: libstdc++
 - macOS: libc++, CoreFoundation, and IOKit from the target SDK
-- Windows GNU: MinGW-w64 GCC 13 or newer with its C++ compiler and WMI import
+- Windows GNU (GCC): MinGW-w64 GCC 13 or newer with its C++ compiler and WMI import
   libraries. The C++ runtime is linked statically.
+- Windows GNU/LLVM, including ARM64: LLVM-MinGW with its libc++, libc++abi,
+  libunwind, and Windows import libraries. These compiler runtimes are linked
+  statically; Microsoft-toolchain targets retain their existing runtime setup.
 
 Cargo's `cc` build helper honors target-qualified compiler variables. The
 Nebula Docker image should provide at least:
@@ -81,6 +84,7 @@ Nebula Docker image should provide at least:
 ```text
 CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
 CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++-win32
+CXX_aarch64_pc_windows_gnullvm=/opt/llvm-mingw/bin/aarch64-w64-mingw32-clang++
 CXX_x86_64_apple_darwin=o64-clang++
 CXX_aarch64_apple_darwin=oa64-clang++
 ```
@@ -94,6 +98,17 @@ osxcross image as Nebula:
 ```sh
 docker build -f Dockerfile.cross .
 ```
+
+To check just Windows ARM64:
+
+```sh
+docker build -f Dockerfile.cross --target windows-arm64-check .
+```
+
+This builds and links the inventory example with both the default and minimal
+feature sets. The default build is also checked for ARM64 machine type and
+unexpected compiler-runtime DLL imports. CI runs this check separately from
+Linux tests. It does not run the executable on Windows ARM64 hardware.
 
 ## Platform behavior
 

@@ -1,9 +1,11 @@
 ARG RUST_VERSION=stable
 
-FROM rust:trixie AS toolchain
+FROM rust:trixie AS rust-toolchain
 ARG RUST_VERSION
 RUN rustup toolchain install "$RUST_VERSION" --profile minimal
 RUN rustup default "$RUST_VERSION"
+
+FROM rust-toolchain AS toolchain
 
 RUN dpkg --add-architecture arm64 && \
     apt-get update && \
@@ -41,6 +43,34 @@ RUN rustup target add \
       x86_64-apple-darwin \
       aarch64-apple-darwin
 
+FROM rust-toolchain AS windows-arm64-toolchain
+# LLVM-MinGW provides the ARM64 Windows C/C++ toolchain and UCRT import libraries.
+RUN curl -fL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+      https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/llvm-mingw-20260616-ucrt-ubuntu-22.04-x86_64.tar.xz && \
+    echo "534b92e067b22a6b4441f48ae9240a3341b17825d04d577eab0cf85c44b4deda  /tmp/llvm-mingw.tar.xz" | sha256sum -c - && \
+    mkdir -p /opt/llvm-mingw && \
+    tar -xf /tmp/llvm-mingw.tar.xz -C /opt/llvm-mingw --strip-components=1 && \
+    rm /tmp/llvm-mingw.tar.xz
+
+ENV CC_aarch64_pc_windows_gnullvm=/opt/llvm-mingw/bin/aarch64-w64-mingw32-clang \
+    CXX_aarch64_pc_windows_gnullvm=/opt/llvm-mingw/bin/aarch64-w64-mingw32-clang++ \
+    AR_aarch64_pc_windows_gnullvm=/opt/llvm-mingw/bin/llvm-ar \
+    CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER=/opt/llvm-mingw/bin/aarch64-w64-mingw32-clang
+
+ENV CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-static"
+RUN rustup target add aarch64-pc-windows-gnullvm
+
+FROM windows-arm64-toolchain AS windows-arm64-check
+WORKDIR /workspace
+COPY . .
+RUN cargo build --locked --release --example inventory --target aarch64-pc-windows-gnullvm && \
+    /opt/llvm-mingw/bin/llvm-readobj --file-headers --coff-imports \
+      target/aarch64-pc-windows-gnullvm/release/examples/inventory.exe > /tmp/inventory-pe.txt && \
+    grep -q IMAGE_FILE_MACHINE_ARM64 /tmp/inventory-pe.txt && \
+    ! grep -E 'Name: (libc\+\+|libunwind|libwinpthread|libgcc_s)' /tmp/inventory-pe.txt
+RUN cargo build --locked --release --no-default-features --example inventory \
+      --target aarch64-pc-windows-gnullvm --target-dir /tmp/hwinfo-minimal
+
 FROM toolchain AS cross-check
 WORKDIR /workspace
 COPY . .
@@ -50,3 +80,5 @@ RUN cargo build --locked --release --example inventory --target aarch64-unknown-
 RUN cargo build --locked --release --example inventory --target x86_64-pc-windows-gnu
 RUN cargo build --locked --release --example inventory --target x86_64-apple-darwin
 RUN cargo build --locked --release --example inventory --target aarch64-apple-darwin
+
+COPY --from=windows-arm64-check /workspace/target/aarch64-pc-windows-gnullvm/release/examples/inventory.exe /out/inventory-windows-aarch64.exe

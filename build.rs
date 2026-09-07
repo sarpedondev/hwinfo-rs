@@ -10,11 +10,11 @@ fn add_component(build: &mut cc::Build, upstream: &std::path::Path, platform: &s
         .file(upstream.join(format!("src/{platform}/{name}.cpp")));
 }
 
-fn add_static_cpp_stdlib_search(build: &cc::Build) {
+fn add_static_cpp_stdlib_search(build: &cc::Build, library: &str) {
     let output = build
         .get_compiler()
         .to_command()
-        .arg("-print-file-name=libstdc++.a")
+        .arg(format!("-print-file-name=lib{library}.a"))
         .output()
         .expect("failed to locate the static C++ runtime");
     if !output.status.success() {
@@ -39,6 +39,7 @@ fn main() {
     let upstream = manifest_dir.join("vendor/hwinfo");
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("missing CARGO_CFG_TARGET_OS");
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let target_abi = env::var("CARGO_CFG_TARGET_ABI").unwrap_or_default();
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("missing OUT_DIR"));
 
     if !upstream.join("include/hwinfo/hwinfo.h").is_file() {
@@ -133,10 +134,15 @@ fn main() {
         }
         "windows" => {
             if target_env == "gnu" {
-                native
-                    .cpp_link_stdlib("stdc++")
-                    .cpp_link_stdlib_static(true);
-                add_static_cpp_stdlib_search(&native);
+                let llvm = target_abi == "llvm";
+                let library = if llvm { "c++" } else { "stdc++" };
+                native.cpp_link_stdlib(library).cpp_link_stdlib_static(true);
+                add_static_cpp_stdlib_search(&native, library);
+                if llvm {
+                    // LLVM-MinGW splits the static C++ runtime across these archives.
+                    println!("cargo:rustc-link-lib=static=c++abi");
+                    println!("cargo:rustc-link-lib=static=unwind");
+                }
             } else {
                 native.cpp_link_stdlib(None);
             }

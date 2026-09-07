@@ -26,3 +26,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ocl-icd-opencl-dev opencl-clhpp-headers
           cargo check --no-default-features --features opencl
+
+  windows-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Cross-link Windows ARM64 and verify runtime dependencies
+        run: docker build -f Dockerfile.cross --target windows-arm64-check .
