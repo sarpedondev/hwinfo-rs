@@ -10,7 +10,9 @@ allocations are exposed through the public Rust API.
 
 ## Clone
 
-The upstream C++ project is pinned as a Git submodule:
+The C++ project is pinned as a Git submodule to
+[`sarpedondev/hwinfo`](https://github.com/sarpedondev/hwinfo), a fork carrying a
+Windows GPU ID formatting fix for 32-bit IDs such as Qualcomm's DXGI vendor ID.
 
 ```sh
 git clone --recurse-submodules <your-hwinfo-rs-repository-url>
@@ -19,6 +21,7 @@ git clone --recurse-submodules <your-hwinfo-rs-repository-url>
 For an existing clone:
 
 ```sh
+git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
