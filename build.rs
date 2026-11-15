@@ -168,6 +168,10 @@ fn main() {
                 println!("cargo:rustc-link-lib=ntdll");
                 println!("cargo:rustc-link-lib=advapi32");
             }
+            if enabled("DISK") {
+                println!("cargo:rustc-link-lib=setupapi");
+                println!("cargo:rustc-link-lib=cfgmgr32");
+            }
             if enabled("GPU") {
                 println!("cargo:rustc-link-lib=dxgi");
                 println!("cargo:rustc-link-lib=setupapi");
