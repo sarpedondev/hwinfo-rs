@@ -150,7 +150,6 @@ fn main() {
                 || enabled("MEMORY")
                 || enabled("OS")
                 || enabled("BATTERY")
-                || enabled("NETWORK")
             {
                 native.file(upstream.join("src/windows/utils/wmi_wrapper.cpp"));
                 println!("cargo:rustc-link-lib=ole32");
@@ -159,6 +158,10 @@ fn main() {
             }
             if target_env == "gnu" {
                 native.include(manifest_dir.join("compat/mingw"));
+            }
+            if enabled("NETWORK") {
+                println!("cargo:rustc-link-lib=iphlpapi");
+                println!("cargo:rustc-link-lib=ws2_32");
             }
             if enabled("CPU") || enabled("MONITORING") {
                 println!("cargo:rustc-link-lib=powrprof");
